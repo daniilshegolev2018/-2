@@ -1,8 +1,4 @@
 {
-  "owner": "daniilshegolev2018",
-  "repository": "vershina-monitor",
-  "branch": "main",
-  "dataPath": "data.json",
-  "school": "Лицей №3",
-  "sourceUrl": "https://sch3.edumsko.ru/activity/classes"
+  "apiBase": "https://vershina-registration-lyceum3.daniilshegolev2018.chatgpt.site",
+  "school": "Лицей №3"
 }

@@ -1,7 +1,1 @@
-{
-  "name": "vershina-monitor",
-  "version": "1.0.0",
-  "private": true,
-  "type": "module",
-  "scripts": { "test": "node --test tests/*.test.js", "check": "node --check app.js && node --check core.js && node --check github.js" }
-}
+{"type":"module","private":true,"scripts":{"test":"node --test tests/*.test.js"}}

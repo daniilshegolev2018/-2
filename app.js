@@ -1,5 +1,5 @@
 import {percentage,color,formatPercent,summary,validateRow,validateData,csv} from './core.js';
-import {githubClient} from './github.js';
+import {passwordClient} from './api.js';
 const $ = id=>document.getElementById(id);
 const node = (tag, cls, text) => {const el=document.createElement(tag);if(cls)el.className=cls;if(text!==undefined)el.textContent=text;return el;};
 const state={config:null,client:null,data:{version:1,updatedAt:null,rows:[]},baseline:null,sha:null,token:null,login:null,campus:'all',query:'',loaded:false,dirty:false,busy:false,apiFresh:false};
@@ -50,10 +50,10 @@ function showError(id,error){const el=$(id);el.textContent=error instanceof Erro
 async function load(allowFallback=true){
  state.busy=true;controls();message('Загружаем актуальные результаты…');
  try {
-  const snapshot=await state.client.read(state.token);state.data=snapshot.data;state.sha=snapshot.sha;state.apiFresh=true;state.baseline=clone(state.data);state.loaded=true;state.dirty=false;message(isEditor()?'Данные загружены. Вы можете редактировать таблицу.':'Просмотр открыт всем. Таблица обновлена из GitHub.','success');
+  const snapshot=await state.client.read(state.token);state.data=snapshot.data;state.sha=snapshot.sha;state.apiFresh=true;state.baseline=clone(state.data);state.loaded=true;state.dirty=false;message(isEditor()?'Данные загружены. Вы можете редактировать таблицу.':'Просмотр открыт всем. Таблица обновлена с сервера.','success');
  }catch(error){
   if(allowFallback&&!isEditor()){
-   try{const response=await fetch('./data.json',{cache:'no-store'});if(!response.ok)throw Error();state.data=validateData(await response.json());state.baseline=clone(state.data);state.loaded=true;state.apiFresh=false;state.sha=null;message('Показана опубликованная версия. Актуальные данные GitHub сейчас недоступны — нажмите «Обновить» позже.','warning');}
+   try{const response=await fetch('./data.json',{cache:'no-store'});if(!response.ok)throw Error();state.data=validateData(await response.json());state.baseline=clone(state.data);state.loaded=true;state.apiFresh=false;state.sha=null;message('Показана опубликованная версия. Актуальные данные сервера сейчас недоступны — нажмите «Обновить» позже.','warning');}
    catch{message('Не удалось загрузить таблицу. Проверьте соединение и нажмите «Обновить».','error');$('refresh').disabled=false;}
   }else{message(error.message,'error');}
  }finally{state.busy=false;render();$('refresh').disabled=state.busy;}
@@ -81,14 +81,14 @@ $('login-open').onclick=()=>{$('login-error').hidden=true;$('login-dialog').show
 $('login-dialog').addEventListener('close',()=>{$('access-token').value='';});
 $('login-form').onsubmit=async e=>{
  e.preventDefault();$('login-error').hidden=true;const token=$('access-token').value.trim();$('login-submit').disabled=true;$('login-submit').textContent='Проверяем доступ…';
- try{const result=await state.client.login(token);state.token=token;state.login=result.login;state.sha=result.sha;state.data=result.data;state.baseline=clone(state.data);state.dirty=false;state.loaded=true;state.apiFresh=true;$('access-token').value='';$('login-dialog').close();render();message('Вы вошли как владелец проекта. Изменения публикуются кнопкой «Сохранить для всех».','success');}
+ try{const result=await state.client.login(token);state.token=result.token;state.login=result.login;state.sha=result.sha;state.data=result.data;state.baseline=clone(state.data);state.dirty=false;state.loaded=true;state.apiFresh=true;if(result.sha===0&&!result.data.rows.length){try{const prior=await fetch('./data.json',{cache:'no-store'});if(prior.ok){const restored=validateData(await prior.json());if(restored.rows.length){state.data=restored;state.dirty=true;}}}catch{}}$('access-token').value='';$('login-dialog').close();render();message(state.dirty?'Старые данные загружены в черновик. Нажмите «Сохранить для всех», чтобы перенести их на сервер.':'Вы вошли как редактор. Изменения публикуются кнопкой «Сохранить для всех».',state.dirty?'warning':'success');}
  catch(error){showError('login-error',error);$('access-token').value='';}
  finally{$('login-submit').disabled=false;$('login-submit').textContent='Войти';}
 };
 $('logout').onclick=async()=>{if(state.busy)return;if(state.dirty&&!await ask('Выйти без сохранения?', 'Неопубликованные изменения будут потеряны.'))return;logout();};
 $('undo').onclick=async()=>{if(!state.dirty||state.busy)return;if(await ask('Отменить все правки?', 'Таблица вернётся к последнему сохранённому состоянию.')){state.data=clone(state.baseline);state.dirty=false;render();message('Черновые правки отменены.');}};
 $('publish').onclick=async()=>{
- if(!isEditor()||!state.dirty||state.busy)return;state.busy=true;render();message('Сохраняем результаты в GitHub…');
+ if(!isEditor()||!state.dirty||state.busy)return;state.busy=true;render();message('Сохраняем результаты…');
  try{const candidate=validateData({...state.data,updatedAt:new Date().toISOString()});const result=await state.client.save(state.token,state.sha,candidate);state.data=result.data;state.baseline=clone(result.data);state.sha=result.sha;state.dirty=false;message('Сохранено для всех. При следующем открытии посетители увидят актуальную таблицу.','success');}
  catch(error){message(error.message+' Ваши правки остаются в черновике.','error');}
  finally{state.busy=false;render();}
@@ -97,5 +97,5 @@ const backup=node('button','button white','Резервная копия JSON');
 for(const button of document.querySelectorAll('[data-close]'))button.onclick=()=>{if(button.dataset.close==='confirm-dialog')resolveConfirm(false);else $(button.dataset.close).close();};
 $('confirm-no').onclick=()=>resolveConfirm(false);$('confirm-yes').onclick=()=>resolveConfirm(true);$('confirm-dialog').addEventListener('cancel',e=>{e.preventDefault();resolveConfirm(false);});
 window.addEventListener('beforeunload',e=>{if(state.dirty){e.preventDefault();e.returnValue='';}});
-async function init(){try{const r=await fetch('./config.json',{cache:'no-store'});if(!r.ok)throw Error('Не удалось загрузить настройки проекта.');state.config=await r.json();state.client=githubClient(state.config);$('school').textContent=state.config.school||'Лицей №3';await load();}catch(error){message(error.message,'error');$('login-open').disabled=true;}}
+async function init(){try{const r=await fetch('./config.json',{cache:'no-store'});if(!r.ok)throw Error('Не удалось загрузить настройки проекта.');state.config=await r.json();state.client=passwordClient(state.config);$('school').textContent=state.config.school||'Лицей №3';await load();}catch(error){message(error.message,'error');$('login-open').disabled=true;}}
 render();init();
